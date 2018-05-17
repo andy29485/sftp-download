@@ -110,6 +110,7 @@ def edit_config(config=None):
                 private_key=config.findtext('.//key') or None,
                 private_key_pass=config.findtext('.//password') or None,
   ) as sftp:
+    sftp.chdir('/mnt/5TB_share/sftp-root/Emby/Anime_Symlinks/')
     comp = lambda text, state: file_completion(sftp, text, state)
     readline.set_completer(comp)
     rpath = input('Please enter remote show dir [empty to end]: ')

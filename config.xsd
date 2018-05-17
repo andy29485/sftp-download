@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <xs:element name="config" type="config" />
+
+  <xs:complexType name="config">
+    <xs:sequence>
+      <xs:element name="connection" type="conn" minOccurs="0" maxOccurs="unbounded" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="conn">
+    <xs:sequence>
+      <xs:element name="auth" type="auth" />
+      <xs:element name="group" type="group" minOccurs="0" maxOccurs="unbounded" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType  name="auth">
+    <xs:all>
+      <xs:element name="hostname" type="xs:string"/>
+      <xs:element name="port" type="xs:integer"/>
+      <xs:element name="username" type="xs:string"/>
+      <xs:element name="key" type="xs:string"/>
+      <xs:element name="password" type="xs:string"/>
+    </xs:all>
+  </xs:complexType>
+
+  <xs:complexType name="group">
+    <xs:sequence>
+      <xs:element name="show" type="show" minOccurs="0" maxOccurs="unbounded" />
+    </xs:sequence>
+    <xs:attribute name="location" type="xs:string" use="required" />
+  </xs:complexType>
+
+  <xs:complexType name="show">
+    <xs:sequence>
+      <xs:element name="remotepath" type="xs:string"/>
+      <xs:element name="downloaded" type="downloaded" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="downloaded">
+    <xs:sequence>
+      <xs:element name="range" type="range" minOccurs="0" maxOccurs="unbounded" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="range">
+    <xs:attribute name="season" type="xs:integer"/>
+    <xs:attribute name="start" type="xs:integer"/>
+    <xs:attribute name="end" type="xs:integer"/>
+  </xs:complexType>
+</xs:schema>
