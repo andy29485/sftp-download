@@ -251,7 +251,6 @@ def process_file(config, ranges, save_location, sftp, path):
 
   if episode not in ranges.get(season, set()):
     ranges[season] = ranges.get(season, set()).union({episode})
-    return
     sftp.get(path,
       localpath=os.path.join(save_location, name),
       callback=callback,
