@@ -58,6 +58,7 @@ def file_completion(sftp, text, state):
   dir = os.path.dirname(text) or '.'
   if sftp:
     files = [os.path.join(dir, f) if dir!='.' else f for f in sftp.listdir(dir)]
+    files = [f+'/' for f in files if sftp.isdir(f)]
   else:
     files = [os.path.join(dir, f) if dir!='.' else f for f in os.listdir(dir)]
     files = [f+'/' for f in files if os.path.isdir(f)]
@@ -110,7 +111,10 @@ def edit_config(config=None):
                 private_key=config.findtext('.//key') or None,
                 private_key_pass=config.findtext('.//password') or None,
   ) as sftp:
-    sftp.chdir('/mnt/5TB_share/sftp-root/Emby/Anime_Symlinks/')
+    remote_root = '/mnt/5TB_share/sftp-root/Emby/Anime_Symlinks/'
+    remote_root = auth.findtext('./root') or remote_root
+    sftp.chdir(remote_root)
+
     comp = lambda text, state: file_completion(sftp, text, state)
     readline.set_completer(comp)
     rpath = input('Please enter remote show dir [empty to end]: ')
@@ -182,8 +186,7 @@ def update_range(config, ranges):
 
   for season, rng in ranges.items():
     rng = sorted(rng)
-    start = rng[0]
-    end = start
+    end = start = rng[0]
     for i,ep in enumerate(rng[1:]):
       if ep == end+1 and i != len(rng)-2:
         end = ep
@@ -196,6 +199,12 @@ def update_range(config, ranges):
                          end=str(end)
         )
         start = end = ep
+    if len(rng) == 1:
+      etree.SubElement(downloaded,'range',
+                       season=str(season),
+                       start=str(start),
+                       end=str(end)
+      )
   return config
 
 def process_config(config):
@@ -242,6 +251,7 @@ def process_file(config, ranges, save_location, sftp, path):
 
   if episode not in ranges.get(season, set()):
     ranges[season] = ranges.get(season, set()).union({episode})
+    return
     sftp.get(path,
       localpath=os.path.join(save_location, name),
       callback=callback,
