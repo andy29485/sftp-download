@@ -38,11 +38,11 @@ from lxml import etree
 try:
   import readline
 except:
-  pass
+  import pyreadline as readline
 
 
 # globals
-cdir = os.path.dirname(os.path.realpath(sys.argv[0]))
+cdir = os.path.realpath(os.path.dirname(os.path.abspath(sys.argv[0])))
 filename = os.path.join(cdir, 'config.xml')
 ep_pat = '(?<=/)?[^/]*?(\d+)x(\d+)[^/]*?\\.(mkv|mp4|avi|wmv|flv|mov)$'
 ep_pat = re.compile(ep_pat, re.I)
