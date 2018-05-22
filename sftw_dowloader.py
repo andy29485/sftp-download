@@ -184,27 +184,27 @@ def update_range(config, ranges):
   if downloaded is None:
     downloaded = etree.SubElement(config, 'downloaded')
 
+  def add(season, start, end):
+    etree.SubElement(downloaded,'range',
+                     season=str(season),
+                     start=str(start),
+                     end=str(end)
+    )
+
   for season, rng in ranges.items():
     rng = sorted(rng)
     end = start = rng[0]
     for i,ep in enumerate(rng[1:]):
       if ep == end+1 and i != len(rng)-2:
         end = ep
+      elif ep == end+1:
+        end = ep
+        add(season, start, end)
       else:
-        if ep == end+1:
-          end = ep
-        etree.SubElement(downloaded,'range',
-                         season=str(season),
-                         start=str(start),
-                         end=str(end)
-        )
+        add(season, start, end)
         start = end = ep
-    if len(rng) == 1:
-      etree.SubElement(downloaded,'range',
-                       season=str(season),
-                       start=str(start),
-                       end=str(end)
-      )
+    if start == end:
+      add(season, start, end)
   return config
 
 def process_config(config):
