@@ -155,8 +155,8 @@ def edit_config(config=None):
       rpath = input('\nPlease enter remote show dir [empty to end]: ')
       readline.set_completer(None)
 
-
   save(config)
+  return
 
 def save(config, filename=filename):
   with open(filename, 'w') as f:
