@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 # Installation:
-#   sudo pip3 install pysftp lxml bisect
+#   sudo pip3 install pysftp lxml bisect readline
 # or
-#   python3 -m pip install pysftp lxml bisect
+#   python -m pip install pysftp lxml bisect pyreadline
 
 '''
 <config>
@@ -38,7 +38,10 @@ from lxml import etree
 try:
   import readline
 except:
-  pass
+  try:
+    import pyreadline as readline
+  except:
+    pass
 
 
 # globals
@@ -250,6 +253,6 @@ def process_file(config, ranges, save_location, sftp, path):
 if __name__ == '__main__':
   config = load()
   if len(sys.argv) > 1:
-    edit_config(config)
+    config = edit_config(config)
   process_config(config)
   save(config)
