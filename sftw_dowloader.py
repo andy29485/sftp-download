@@ -60,11 +60,11 @@ def list_completion(values, text, state):
 def file_completion(sftp, text, state):
   dir = os.path.dirname(text) or '.'
   if sftp:
-    files = [os.path.join(dir, f) if dir!='.' else f for f in sftp.listdir(dir)]
-    files = [f+os.path.sep for f in files if sftp.isdir(f)]
+    files = [dir+'/'f if dir!='.' else f for f in sftp.listdir(dir)]
+    files = [f+'/' for f in files if sftp.isdir(f)]
   else:
     files = [os.path.join(dir, f) if dir!='.' else f for f in os.listdir(dir)]
-    files = [f+'/' for f in files if os.path.isdir(f)]
+    files = [f+os.path.sep for f in files if os.path.isdir(f)]
   files=[f for f in files if f.startswith(text)]
 
   return files[state]
