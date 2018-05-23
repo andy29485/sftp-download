@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 # Installation:
-#   sudo pip3 install pysftp lxml bisect readline
+#   sudo pip3 install pysftp lxml bisect
 # or
-#   python -m pip install pysftp lxml bisect pyreadline
+#   python3 -m pip install pysftp lxml bisect
 
 '''
 <config>
@@ -45,7 +45,7 @@ except:
 
 
 # globals
-cdir = os.path.dirname(os.path.realpath(sys.argv[0]))
+cdir = os.path.realpath(os.path.dirname(os.path.abspath(sys.argv[0])))
 filename = os.path.join(cdir, 'config.xml')
 ep_pat = '(?<=/)?[^/]*?(\d+)x(\d+)[^/]*?\\.(mkv|mp4|avi|wmv|flv|mov)$'
 ep_pat = re.compile(ep_pat, re.I)
@@ -61,6 +61,7 @@ def file_completion(sftp, text, state):
   dir = os.path.dirname(text) or '.'
   if sftp:
     files = [os.path.join(dir, f) if dir!='.' else f for f in sftp.listdir(dir)]
+    files = [f+'/' for f in files if sftp.isdir(f)]
   else:
     files = [os.path.join(dir, f) if dir!='.' else f for f in os.listdir(dir)]
     files = [f+'/' for f in files if os.path.isdir(f)]
@@ -113,7 +114,10 @@ def edit_config(config=None):
                 private_key=config.findtext('.//key') or None,
                 private_key_pass=config.findtext('.//password') or None,
   ) as sftp:
-    sftp.chdir('/mnt/5TB_share/sftp-root/Emby/Anime_Symlinks/')
+    remote_root = '/mnt/5TB_share/sftp-root/Emby/Anime_Symlinks/'
+    remote_root = auth.findtext('./root') or remote_root
+    sftp.chdir(remote_root)
+
     comp = lambda text, state: file_completion(sftp, text, state)
     readline.set_completer(comp)
     rpath = input('Please enter remote show dir [empty to end]: ')
@@ -183,22 +187,27 @@ def update_range(config, ranges):
   if downloaded is None:
     downloaded = etree.SubElement(config, 'downloaded')
 
+  def add(season, start, end):
+    etree.SubElement(downloaded,'range',
+                     season=str(season),
+                     start=str(start),
+                     end=str(end)
+    )
+
   for season, rng in ranges.items():
     rng = sorted(rng)
-    start = rng[0]
-    end = start
+    end = start = rng[0]
     for i,ep in enumerate(rng[1:]):
       if ep == end+1 and i != len(rng)-2:
         end = ep
+      elif ep == end+1:
+        end = ep
+        add(season, start, end)
       else:
-        if ep == end+1:
-          end = ep
-        etree.SubElement(downloaded,'range',
-                         season=str(season),
-                         start=str(start),
-                         end=str(end)
-        )
+        add(season, start, end)
         start = end = ep
+    if start == end:
+      add(season, start, end)
   return config
 
 def process_config(config):
