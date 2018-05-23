@@ -107,12 +107,15 @@ def edit_config(config=None):
     loc = etree.SubElement(conn, 'group')
     loc.set('location', dirname)
 
+  cnopts = pysftp.CnOpts()
+  cnopts.hostkeys = None
   with pysftp.Connection(config.findtext('.//hostname'),
                 port=int(config.findtext('.//port')),
                 username=config.findtext('.//username'),
                 password=config.findtext('.//password') or None,
                 private_key=config.findtext('.//key') or None,
                 private_key_pass=config.findtext('.//password') or None,
+                cnopts=cnopts,
   ) as sftp:
     remote_root = '/mnt/5TB_share/sftp-root/Emby/Anime_Symlinks/'
     remote_root = auth.findtext('./root') or remote_root
@@ -215,12 +218,15 @@ def process_config(config):
     process_connection(connection)
 
 def process_connection(config):
+  cnopts = pysftp.CnOpts()
+  cnopts.hostkeys = None
   with pysftp.Connection(config.findtext('.//hostname'),
                 port=int(config.findtext('.//port')),
                 username=config.findtext('.//username'),
                 password=config.findtext('.//password') or None,
                 private_key=config.findtext('.//key') or None,
                 private_key_pass=config.findtext('.//password') or None,
+                cnopts=cnopts,
   ) as sftp:
     for group in config.findall('./group'):
       save_location = group.get('location', './')
