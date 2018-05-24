@@ -156,7 +156,7 @@ def edit_config(config=None):
       readline.set_completer(None)
 
   save(config)
-  return
+  return config
 
 def save(config, filename=filename):
   with open(filename, 'w') as f:
