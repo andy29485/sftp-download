@@ -263,14 +263,14 @@ def process_show(config, save_location, sftp, conn=None):
   if conn:
     try:
       show = next(x for x in conn.series_sync if showpath in x.path)
+      for season in show.seasons_sync:
+        eps = ranges.get(season.index_number, set())
+        for ep in season.episodes_sync:
+          if ep.index_number in eps and not ep.watched:
+            ep.setWatched_sync()
     except:
-      show = 0
-  if show:
-    for season in show.seasons_sync:
-      eps = ranges.get(season.index_number, set())
-      for ep in season.episodes_sync:
-        if ep.index_number in eps and not ep.watched:
-          ep.setWatched_sync()
+      pass
+
 
 def process_file(config, ranges, save_location, sftp, path):
   info = ep_pat.search(path)
