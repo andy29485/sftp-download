@@ -270,7 +270,7 @@ def process_show(config, save_location, sftp, conn=None):
       eps = ranges.get(season.index_number, set())
       for ep in season.episodes_sync:
         if ep.index_number in eps and not ep.watched:
-          ep.setWatched()
+          ep.setWatched_sync()
 
 def process_file(config, ranges, save_location, sftp, path):
   info = ep_pat.search(path)
