@@ -231,10 +231,9 @@ def process_connection(config):
 
   embycfg = config.find('.//emby')
   if embypy and embycfg is not None:
-    url      = embycfg.get('url')
-    username = embycfg.get('username')
-    password = embycfg.get('password')
-    conn = embypy.Emby(url, username=username, password=password)
+    conn = embypy.Emby(**embycfg.attrib)
+    embycfg.set('token',  conn.connector.token or conn.connector.api_key)
+    embycfg.set('userid', conn.connector.userid)
   else:
     conn = None
 

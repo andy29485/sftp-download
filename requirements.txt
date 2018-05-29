@@ -1,4 +1,4 @@
-embypy>=0.4.0.0
+embypy>=0.4.2.0
 pysftp
 bisect
 lxml
