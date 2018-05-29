@@ -35,13 +35,19 @@ import os
 import sys
 import re
 from lxml import etree
+
+try:
+  import embypy
+except:
+  embypy = None
+
 try:
   import readline
 except:
   try:
     import pyreadline as readline
   except:
-    pass
+    print('please install readline or pyreadline (windows) for tab completion')
 
 
 # globals
@@ -109,17 +115,19 @@ def edit_config(config=None):
 
   cnopts = pysftp.CnOpts()
   cnopts.hostkeys = None
+
+  remote_root = '/mnt/5TB_share/sftp-root/Emby/Anime_Symlinks/'
+  remote_root = auth.findtext('./root') or remote_root
+
   with pysftp.Connection(config.findtext('.//hostname'),
                 port=int(config.findtext('.//port')),
                 username=config.findtext('.//username'),
                 password=config.findtext('.//password') or None,
                 private_key=config.findtext('.//key') or None,
                 private_key_pass=config.findtext('.//password') or None,
+                default_path=remote_root,
                 cnopts=cnopts,
   ) as sftp:
-    remote_root = '/mnt/5TB_share/sftp-root/Emby/Anime_Symlinks/'
-    remote_root = auth.findtext('./root') or remote_root
-    sftp.chdir(remote_root)
 
     comp = lambda text, state: file_completion(sftp, text, state)
     readline.set_completer(comp)
@@ -220,6 +228,16 @@ def process_config(config):
 def process_connection(config):
   cnopts = pysftp.CnOpts()
   cnopts.hostkeys = None
+
+  embycfg = config.find('.//emby')
+  if embypy and embycfg is not None:
+    url      = embycfg.get('url')
+    username = embycfg.get('username')
+    password = embycfg.get('password')
+    conn = embypy.Emby(url, username=username, password=password)
+  else:
+    conn = None
+
   with pysftp.Connection(config.findtext('.//hostname'),
                 port=int(config.findtext('.//port')),
                 username=config.findtext('.//username'),
@@ -231,16 +249,28 @@ def process_connection(config):
     for group in config.findall('./group'):
       save_location = group.get('location', './')
       for show in group.findall('./show'):
-        process_show(show, save_location, sftp)
+        process_show(show, save_location, sftp, conn)
 
-def process_show(config, save_location, sftp):
-  ranges = xml_range_to_dict(config)
-  pfile  = lambda path: process_file(config, ranges, save_location, sftp, path)
-  ignore = lambda x: None
+def process_show(config, save_location, sftp, conn=None):
+  ranges   = xml_range_to_dict(config)
+  showpath = config.findtext('.//remotepath')
+  pfile    = lambda path: process_file(config, ranges, save_location, sftp, path)
+  ignore   = lambda x: None
 
-  sftp.walktree(config.findtext('.//remotepath'), pfile, ignore, ignore)
+  sftp.walktree(showpath, pfile, ignore, ignore)
   update_range(config, ranges)
 
+  if conn:
+    try:
+      show = next(x for x in conn.series_sync if showpath in x.path)
+    except:
+      show = 0
+  if show:
+    for season in show.seasons_sync:
+      eps = ranges.get(season.index_number, set())
+      for ep in season.episodes_sync:
+        if ep.index_number in eps and not ep.watched:
+          ep.setWatched()
 
 def process_file(config, ranges, save_location, sftp, path):
   info = ep_pat.search(path)
