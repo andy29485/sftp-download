@@ -51,19 +51,20 @@ except:
 
 
 # globals
-cdir = os.path.realpath(os.path.dirname(os.path.abspath(sys.argv[0])))
+cdir    = os.path.realpath(os.path.dirname(os.path.abspath(sys.argv[0])))
 filename = os.path.join(cdir, 'config.xml')
-ep_pat = '(?<=/)?[^/]*?(\d+)x(\d+)[^/]*?\\.(mkv|mp4|avi|wmv|flv|mov)$'
-ep_pat = re.compile(ep_pat, re.I)
+formats = ('mkv','mp4','avi','wmv','flv','mov')
+ep_pat  = f'(?<=/)?[^/]*?(\\d+)x(\\d+)[^/]*?\\.({"|".join(formats)})$'
+ep_pat  = re.compile(ep_pat, re.I)
 
 readline.parse_and_bind("tab: complete")
 readline.set_completer_delims(' ')
 
-def list_completion(values, text, state):
+def list_completion(values, text, state=-1):
   values = [f for f in values if f.startswith(text)]
   return values[state]
 
-def file_completion(sftp, text, state):
+def file_completion(sftp, text, state=-1):
   dir = os.path.dirname(text) or '.'
   if sftp:
     files = [dir+'/'+f if dir!='.' else f for f in sftp.listdir(dir)]
@@ -73,9 +74,33 @@ def file_completion(sftp, text, state):
     files = [f+os.path.sep for f in files if os.path.isdir(f)]
   files=[f for f in files if f.startswith(text)]
 
-  return files[state]
+  return files if state == -1 else files[state]
 
 local_completion = lambda text, state: file_completion(None, text, state)
+
+def emby_connect(config):
+  embycfg = config.find('.//emby')
+  if embypy and embycfg is not None:
+    conn = embypy.Emby(**embycfg.attrib)
+    embycfg.set('token',  conn.connector.token or conn.connector.api_key)
+    embycfg.set('userid', conn.connector.userid)
+    return conn
+  return None
+
+def get_connection(config):
+  cnopts = pysftp.CnOpts()
+  cnopts.hostkeys = None
+  remote_root = '/mnt/5TB_share/sftp-root/Emby/Anime_Symlinks/'
+  remote_root = config.findtext('.//root') or remote_root
+  return pysftp.Connection(config.findtext('.//hostname'),
+                  port=int(config.findtext('.//port')),
+                  username=config.findtext('.//username'),
+                  password=config.findtext('.//password') or None,
+                  private_key=config.findtext('.//key') or None,
+                  private_key_pass=config.findtext('.//password') or None,
+                  default_path=remote_root or None,
+                  cnopts=cnopts,
+  )
 
 def edit_config(config=None):
   if config is None:
@@ -113,22 +138,7 @@ def edit_config(config=None):
     loc = etree.SubElement(conn, 'group')
     loc.set('location', dirname)
 
-  cnopts = pysftp.CnOpts()
-  cnopts.hostkeys = None
-
-  remote_root = '/mnt/5TB_share/sftp-root/Emby/Anime_Symlinks/'
-  remote_root = auth.findtext('./root') or remote_root
-
-  with pysftp.Connection(config.findtext('.//hostname'),
-                port=int(config.findtext('.//port')),
-                username=config.findtext('.//username'),
-                password=config.findtext('.//password') or None,
-                private_key=config.findtext('.//key') or None,
-                private_key_pass=config.findtext('.//password') or None,
-                default_path=remote_root,
-                cnopts=cnopts,
-  ) as sftp:
-
+  with get_connection(config) as sftp:
     comp = lambda text, state: file_completion(sftp, text, state)
     readline.set_completer(comp)
     rpath = input('Please enter remote show dir [empty to end]: ')
@@ -226,59 +236,108 @@ def process_config(config):
     process_connection(connection)
 
 def process_connection(config):
-  cnopts = pysftp.CnOpts()
-  cnopts.hostkeys = None
-
-  embycfg = config.find('.//emby')
-  if embypy and embycfg is not None:
-    conn = embypy.Emby(**embycfg.attrib)
-    embycfg.set('token',  conn.connector.token or conn.connector.api_key)
-    embycfg.set('userid', conn.connector.userid)
-  else:
-    conn = None
-
-  with pysftp.Connection(config.findtext('.//hostname'),
-                port=int(config.findtext('.//port')),
-                username=config.findtext('.//username'),
-                password=config.findtext('.//password') or None,
-                private_key=config.findtext('.//key') or None,
-                private_key_pass=config.findtext('.//password') or None,
-                cnopts=cnopts,
-  ) as sftp:
+  conn = emby_connect(config)
+  with get_connection(config) as sftp:
     for group in config.findall('./group'):
       save_location = group.get('location', './')
       for show in group.findall('./show'):
-        process_show(show, save_location, sftp, conn)
+        process_show_config(show, save_location, sftp, conn)
 
-def process_show(config, save_location, sftp, conn=None):
+def get_emby_obj(path, conn=None):
+  if conn is None:
+    return None
+  for obj in conn.series_sync + conn.movies_sync:
+    if obj.path in path or path.lower() in obj.path.lower():
+      return obj
+  return None
+
+def process_show_config(config, save_location, sftp, conn=None, ir=False):
   ranges   = xml_range_to_dict(config)
   showpath = config.findtext('.//remotepath')
-  pfile    = lambda path: process_file(config, ranges, save_location, sftp, path)
-  ignore   = lambda x: None
+  process_show(config, showpath, save_location, sftp, conn, ranges, ir)
 
-  sftp.walktree(showpath, pfile, ignore, ignore)
-  update_range(config, ranges)
-
-  if conn:
+def update_emby_info(conn, showpath, ranges):
+  if conn is None:
+    return
+  item = get_emby_obj(showpath, conn)
+  try:
+    for season in item.seasons_sync:
+      eps = ranges.get(season.index_number, set())
+      for ep in season.episodes_sync:
+        if ep.index_number in eps and not ep.watched:
+          ep.setWatched_sync()
+  except:
     try:
-      show = next(x for x in conn.series_sync if showpath in x.path)
-      for season in show.seasons_sync:
-        eps = ranges.get(season.index_number, set())
-        for ep in season.episodes_sync:
-          if ep.index_number in eps and not ep.watched:
-            ep.setWatched_sync()
+      item.setWatched_sync()
     except:
-      pass
+      return
 
+def process_show(config, showpath, save_location, sftp,
+                 conn=None, ranges={}, ir=False):
+  pfile   = lambda path: process_file(ranges, save_location, sftp, path, ir)
+  ignore = lambda x: None
+  sftp.walktree(showpath, pfile, ignore, ignore)
+  if config is not None:
+    update_range(config, ranges)
+  update_emby_info(conn, showpath, ranges)
 
-def process_file(config, ranges, save_location, sftp, path):
-  info = ep_pat.search(path)
-  if not info:
+def download_item(config, item_name):
+  conn = emby_connect(config)
+  sloc = config.xpath('.//group/@location') or ['./']
+  sloc = sloc[0]
+  with get_connection(config) as sftp:
+    if not sftp.exists(item_name):
+      if conn:
+        return download_search(config, sloc, item_name, sftp, conn)
+      else:
+        return None
+    elif sftp.isdir(item_name):
+      return download_dir(config, sloc, item_name, sftp, conn)
+    elif sftp.isfile(item_name):
+      return download_file(config, sloc, item_name, sftp, conn)
+
+def download_search(config, save_location, path, sftp, conn):
+  pass
+
+def download_dir(config, save_location, path, sftp, conn):
+  for showcfg in config.xpath('.//show'):
+    show_path = showcfg.findtext('./remotepath')
+    if path in show_path or show_path in path:
+      save_location = showcfg.getparent().get('location')
+      process_show_config(showcfg, save_location, sftp, conn, ir=True)
+      break
+  else:
+    process_show(None, path, save_location, sftp, conn)
+
+def download_file(config, save_location, path, sftp, conn):
+  if not sftp.exists(path):
+    return
+  if path.lower().rpartition('.')[2] in formats:
+    ranges = {}
+    process_file(ranges, save_location, sftp, path)
+    update_emby_info(conn, path, ranges)
+  else:
+    with sftp.open(path) as f:
+      for line in f.readlines():
+        download_file(config, save_location, line.strip(), sftp, conn)
+
+def process_file(ranges, save_location, sftp, path, ir=False):
+  if path.rpartition('.')[2].lower() not in formats:
     return
 
-  season, episode = int(info.group(1)), int(info.group(2))
+  info = ep_pat.search(path)
+  if info:
+    season, episode = int(info.group(1)), int(info.group(2))
+
   name = os.path.basename(path)
   size = 70 - len(name)
+
+  lpath = os.path.join(save_location, name)
+  local_size  = os.stat(lpath).st_size if os.path.exists(lpath) else 0
+  remote_size = sftp.lstat(path).st_size
+  if local_size == remote_size:
+    # file already fully downloaded, skip
+    return
 
   def callback(cur, tot):
     out = f'\r{name} [{"="*(size*cur//tot)}{" "*(size-size*cur//tot)}]      '
@@ -287,8 +346,9 @@ def process_file(config, ranges, save_location, sftp, path):
     else:
       print(out, end='\r')
 
-  if episode not in ranges.get(season, set()):
-    ranges[season] = ranges.get(season, set()).union({episode})
+  if not info or ir or episode not in ranges.get(season, set()):
+    if info:
+      ranges[season] = ranges.get(season, set()).union({episode})
     sftp.get(path,
       localpath=os.path.join(save_location, name),
       callback=callback,
@@ -296,7 +356,17 @@ def process_file(config, ranges, save_location, sftp, path):
 
 if __name__ == '__main__':
   config = load()
-  if len(sys.argv) > 1:
-    config = edit_config(config)
-  process_config(config)
+  for i,arg in enumerate(sys.argv):
+    if i==0: continue
+    if arg.lower() in ('edt', 'edit'):
+      config = edit_config(config)
+    elif arg.lower() in ('l', 'ls', 'lst', 'list'):
+      with get_connection(config) as sftp:
+        print('\n'.join(file_completion(sftp, ' '.join(sys.argv[i+1:]), -1)))
+      break
+    else:
+      download_item(config, arg)
+      break
+  else:
+    process_config(config)
   save(config)
