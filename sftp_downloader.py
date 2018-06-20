@@ -31,6 +31,7 @@
 
 import pysftp
 import bisect
+import shutil
 import os
 import sys
 import re
@@ -340,11 +341,23 @@ def process_file(ranges, save_location, sftp, path, ir=False):
     return
 
   def callback(cur, tot):
-    out = f'\r{name} [{"="*(size*cur//tot)}{" "*(size-size*cur//tot)}]      '
+    width = shutil.get_terminal_size((80, 20)).columns - 15 # max width
+    nlen  = width//2                         # lenght for name information
+    plen  = nlen + (1 if width%2 else 0) - 2 # length for progress bar
+    dname = name                             # display name
+    blen  = plen*cur//tot                    # progress bar lenght
+    pcomp = 100*cur/tot                      # percent completion
+
+    # cut name if needed
+    if len(dname) > nlen:
+      tmp_len = (nlen - 1)//2
+      dname = dname[:tmp_len]+'~'+dname[-tmp_len:]
+
+    out = f'\r{dname:{nlen}} [{"="*blen}{" "*(plen-blen)}] ({pcomp:05.2f} %)  '
     if cur == tot:
       print(out)
     else:
-      print(out, end='\r')
+      print(out, end='\r', flush=True)
 
   if not info or ir or episode not in ranges.get(season, set()):
     if info:

@@ -1,5 +1,6 @@
 embypy>=0.4.2.0
 pysftp
 lxml
+shutil
 readline
 pyreadline[windows]
