@@ -38,13 +38,13 @@ ccache   = {'remote':{}, 'local':{}}
 readline.parse_and_bind("tab: complete")
 readline.set_completer_delims(' ')
 
+# completion helper functions
 def basename(path):
   if len(path) < 2:
     return path
   if path.endswith('/') or path.endswith(os.path.sep):
     path = path[:-1]
   return os.path.basename(path)
-
 
 def list_completion(values, text, state=-1):
   values = [f for f in values if f.startswith(text)]
@@ -88,6 +88,7 @@ def file_completion(sftp, emby, text, state):
 
 local_completion = lambda text, state: file_completion(None, None, text, state)
 
+# emby helper functions
 def emby_connect(config):
   embycfg = config.find('.//emby')
   if embypy and embycfg is not None:
@@ -97,6 +98,39 @@ def emby_connect(config):
     return conn
   return None
 
+def get_emby_obj(path, conn=None):
+  if conn is None:
+    return None
+  for obj in conn.series_sync + conn.movies_sync:
+    if obj.path in path or path.lower() in obj.path.lower():
+      return obj
+  return None
+
+def update_emby_info(conn, showpath, ranges):
+  if conn is None:
+    return
+  item = get_emby_obj(showpath, conn)
+  try:
+    for season in item.seasons_sync:
+      eps = ranges.get(season.index_number, set())
+      for ep in season.episodes_sync:
+        if ep.index_number in eps and not ep.watched:
+          ep.setWatched_sync()
+  except:
+    try:
+      item.setWatched_sync()
+    except:
+      return
+
+def emby_search(conn, search):
+  if not conn:
+    return None
+  for series in emby.series_sync:
+    if basename(series.path) == search.rstrip('/\\'):
+      return series.path
+  return None
+
+# connect to sfpt
 def get_connection(config):
   cnopts = pysftp.CnOpts()
   cnopts.hostkeys = None
@@ -112,6 +146,7 @@ def get_connection(config):
                   cnopts=cnopts,
   )
 
+# config file helper functions
 def edit_config(config=None):
   if config is None:
     config = etree.Element('config')
@@ -167,11 +202,7 @@ def edit_config(config=None):
     rpath = input('Please enter remote show dir [empty to end]: ')
     readline.set_completer(None)
 
-    if emby:
-      for series in emby.series_sync:
-        if basename(series.path) == rpath.rstrip('/\\'):
-          rpath = series.path
-          break
+    rpath = emby_search(emby, rpath) or rpath
 
     while rpath:
       rpath = sftp.normalize(rpath)
@@ -221,6 +252,7 @@ def load(filename=filename):
   except:
     return edit_config()
 
+# ep range helpers
 def xml_range_to_dict(config):
   ranges = {}
   for rng in config.findall('./downloaded/range'):
@@ -260,116 +292,164 @@ def update_range(config, ranges):
       add(season, start, end)
   return config
 
+# main config functions
+#   read config
 def process_config(config):
   for connection in config.findall('./connection'):
     process_connection(connection)
 
+#   per server
 def process_connection(config):
   conn = emby_connect(config)
   with get_connection(config) as sftp:
+    total = 0
+    todo  = {}
     for group in config.findall('./group'):
       save_location = group.get('location', './')
+      todo[save_location] = {}
       for show in group.findall('./show'):
-        process_show_config(show, save_location, sftp, conn)
+        path,paths,rngs = process_show_config(show, save_location, sftp, conn)
+        if len(paths):
+          total += len(paths)
+          todo[save_location][show] = {
+              'showpath':path,
+              'ranges':rngs,
+              'paths':paths,
+          }
+    download_dict(todo, total, conn, sftp)
 
-def get_emby_obj(path, conn=None):
-  if conn is None:
-    return None
-  for obj in conn.series_sync + conn.movies_sync:
-    if obj.path in path or path.lower() in obj.path.lower():
-      return obj
-  return None
+#   do all the downloading
+def download_dict(todo, total, conn, sftp):
+  index = 0
+  for save_location in todo:
+    for config in todo[save_location]:
+      show   = todo[save_location][config]
+      ranges = show['ranges']
+      paths  = show['paths'])
+      for path in paths:
+        index += 1
+        download_file(save_location, sftp, path, index, total or len(paths))
+        if config:
+          update_range(config, ranges)
+        update_emby_info(conn, show['showpath'], ranges)
 
+#   get show dir
 def process_show_config(config, save_location, sftp, conn=None, ir=False):
   ranges   = xml_range_to_dict(config)
   showpath = config.findtext('.//remotepath')
-  process_show(config, showpath, save_location, sftp, conn, ranges, ir)
+  p,r = process_show(config, showpath, save_location, sftp, conn, ranges, ir)
+  return showpath, p, r
 
-def update_emby_info(conn, showpath, ranges):
-  if conn is None:
-    return
-  item = get_emby_obj(showpath, conn)
-  try:
-    for season in item.seasons_sync:
-      eps = ranges.get(season.index_number, set())
-      for ep in season.episodes_sync:
-        if ep.index_number in eps and not ep.watched:
-          ep.setWatched_sync()
-  except:
-    try:
-      item.setWatched_sync()
-    except:
-      return
+#   search eps in the show
+def process_show(config, showpath, save_location, sftp, ranges={}, ir=False):
+  chk = lambda path: download_file_check(ranges, save_location, sftp, path, ir)
+  igr = lambda x: None
 
-def process_show(config, showpath, save_location, sftp,
-                 conn=None, ranges={}, ir=False):
-  pfile   = lambda path: process_file(ranges, save_location, sftp, path, ir)
-  ignore = lambda x: None
-  sftp.walktree(showpath, pfile, ignore, ignore)
-  if config is not None:
-    update_range(config, ranges)
-  update_emby_info(conn, showpath, ranges)
+  paths = []
 
-def download_item(config, item_name):
+  def pfile(path):
+    if chk(path):
+      paths.append(path)
+  sftp.walktree(showpath, pfile, igr, igr)
+
+  return paths, ranges
+
+# irregular version
+def process_item(config, item_name):
   conn = emby_connect(config)
-  sloc = config.xpath('.//group/@location') or ['./']
+  search = f'.//group/show/remotepath[text()="{item_name}"]/../../@location'
+  sloc = config.xpath(search) or config.xpath('.//group/@location') or ['./']
   sloc = sloc[0]
   with get_connection(config) as sftp:
     if not sftp.exists(item_name):
       if conn:
-        return download_search(config, sloc, item_name, sftp, conn)
+        return get_search(config, sloc, item_name, sftp, conn)
       else:
         return None
     elif sftp.isdir(item_name):
-      return download_dir(config, sloc, item_name, sftp, conn)
+      return get_dir(config, sloc, item_name, sftp, conn)
     elif sftp.isfile(item_name):
-      return download_file(config, sloc, item_name, sftp, conn)
+      return get_file(config, sloc, item_name, sftp, conn)
 
-def download_search(config, save_location, path, sftp, conn):
-  pass
-
-def download_dir(config, save_location, path, sftp, conn):
-  for showcfg in config.xpath('.//show'):
-    show_path = showcfg.findtext('./remotepath')
-    if path in show_path or show_path in path:
-      save_location = showcfg.getparent().get('location')
-      process_show_config(showcfg, save_location, sftp, conn, ir=True)
-      break
+def get_search(config, save_location, path, sftp, conn):
+  path = emby_search(conn, rpath)
+  search = f'.//group/show/remotepath[text()="{path}"]/../../@location'
+  save_location = (config.xpath(search) or [save_location])[0]
+  if sftp.isdir(path):
+    get_dir(config, save_location, path, sftp, conn)
   else:
-    process_show(None, path, save_location, sftp, conn)
+    get_file(config, save_location, path, sftp, conn)
 
-def download_file(config, save_location, path, sftp, conn):
+def get_dir(config, save_location, path, sftp, conn):
+  search = './/group/show/remotepath[contains(text(),"{path}")' + \
+           ' or contains("{path}",text())]/..'
+  showcfg = config.xpath(search)
+  if showcfg
+    show_path = showcfg.findtext('./remotepath')
+    save_location = showcfg.getparent().get('location')
+    _,p,r = process_show_config(showcfg, save_location, sftp, conn, ir=True)
+  else:
+    p,r = process_show(None, path, save_location, sftp, conn)
+  download_dict({
+    save_location: {
+      showcfg: {
+        'showpath':show_path,
+        'ranges':r,
+        'paths':p,
+      }
+    }
+  })
+
+def get_file(config, save_location, path, sftp, conn, index=0, total=0):
   if not sftp.exists(path):
     return
   if path.lower().rpartition('.')[2] in formats:
-    ranges = {}
-    process_file(ranges, save_location, sftp, path)
+    download_file(save_location, sftp, path, index, total)
     update_emby_info(conn, path, ranges)
   else:
     with sftp.open(path) as f:
-      for line in f.readlines():
-        download_file(config, save_location, line.strip(), sftp, conn)
+      lines = f.readlines()
+      tot   = len(list(lines))
+      for i,line in enumerate(lines, 1):
+        get_file(config, save_location, line.strip(), sftp, conn, i, tot)
 
-def process_file(ranges, save_location, sftp, path, ir=False):
+def download_file_check(ranges, save_location, sftp, path, ir=False):
   if path.rpartition('.')[2].lower() not in formats:
-    return
+    return False
 
   info = ep_pat.search(path)
   if info:
     season, episode = int(info.group(1)), int(info.group(2))
 
-  name = os.path.basename(path)
-  size = 70 - len(name)
-
+  name  = os.path.basename(path)
   lpath = os.path.join(save_location, name)
+
   local_size  = os.stat(lpath).st_size if os.path.exists(lpath) else 0
   remote_size = sftp.lstat(path).st_size
   if local_size == remote_size:
     # file already fully downloaded, skip
-    return
+    return False
+
+  if not info or ir or episode not in ranges.get(season, set()):
+    if info:
+      # update ep range
+      ranges[season] = ranges.get(season, set()).union({episode})
+    return True
+  return False
+
+def download_file(save_location, sftp, path, index=0, total=0):
+  name  = os.path.basename(path)
+  lpath = os.path.join(save_location, name)
+
+  local_size  = os.stat(lpath).st_size if os.path.exists(lpath) else 0
+  remote_size = sftp.lstat(path).st_size
+
+  if index and total:
+    ilen = len(str(total))
+    name = f'({index:0{ilen}}/{total}) {name}'
 
   def callback(cur, tot):
-    width = shutil.get_terminal_size((80, 20)).columns - 15 # max width
+    width = shutil.get_terminal_size((80, 20)).columns - 17 # max width
     nlen  = width//2                         # lenght for name information
     plen  = nlen + (1 if width%2 else 0) - 2 # length for progress bar
     dname = name                             # display name
@@ -381,19 +461,29 @@ def process_file(ranges, save_location, sftp, path, ir=False):
       tmp_len = (nlen - 1)//2
       dname = dname[:tmp_len]+'~'+dname[-tmp_len:]
 
-    out = f'\r{dname:{nlen}} [{"="*blen}{" "*(plen-blen)}] ({pcomp:05.2f} %)  '
+    if cur == -1:
+      bar = 'skipping, exists'[:plen]
+      pad = ' '*((plen-len(bar))//2)
+      bar = pad + bar + pad + (' ' if plen%2 else '')
+    else:
+      bar = f'{"="*blen}{" "*(plen-blen)}'
+
+    out = f'\r{dname:{nlen}} [{bar}] ({pcomp:05.2f} %)    '
+
     if cur == tot:
       print(out)
     else:
       print(out, end='\r', flush=True)
 
-  if not info or ir or episode not in ranges.get(season, set()):
-    if info:
-      ranges[season] = ranges.get(season, set()).union({episode})
-    sftp.get(path,
-      localpath=os.path.join(save_location, name),
-      callback=callback,
-    )
+  if local_size == remote_size:
+    # file already fully downloaded, skip
+    callable(-1, -1)
+    return
+
+  sftp.get(path,
+    localpath=lpath,
+    callback=callback,
+  )
 
 if __name__ == '__main__':
   config = load()
@@ -406,7 +496,7 @@ if __name__ == '__main__':
         print('\n'.join(file_completion(sftp, ' '.join(sys.argv[i+1:]), -1)))
       break
     else:
-      download_item(config, arg)
+      process_item(config, arg)
       break
   else:
     process_config(config)
