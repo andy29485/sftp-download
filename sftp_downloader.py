@@ -5,30 +5,6 @@
 # or
 #   python3 -m pip install pysftp lxml bisect
 
-'''
-<config>
-  <connection>
-    <auth>
-      <hostname>...</hostname>
-      <port>...</port>
-      <username>...</username>
-      <password>...</password>
-      <key>...</key>
-    </auth>
-    <group location="/home/az">
-      <show>
-        <remotepath>...</remotepath>
-        <downloaded>
-          <range season="..." start="..." end="..." />
-        </downloaded>
-      </show>
-      ...
-    </group>
-    ...
-  </connection>
-</config>
-'''
-
 import pysftp
 import bisect
 import shutil
@@ -52,32 +28,65 @@ except:
 
 
 # globals
-cdir    = os.path.realpath(os.path.dirname(os.path.abspath(sys.argv[0])))
+cdir     = os.path.realpath(os.path.dirname(os.path.abspath(sys.argv[0])))
 filename = os.path.join(cdir, 'config.xml')
-formats = ('mkv','mp4','avi','wmv','flv','mov')
-ep_pat  = f'(?<=/)?[^/]*?(\\d+)x(\\d+)[^/]*?\\.({"|".join(formats)})$'
-ep_pat  = re.compile(ep_pat, re.I)
+formats  = ('mkv','mp4','avi','wmv','flv','mov')
+ep_pat   = f'(?<=/)?[^/]*?(\\d+)x(\\d+)[^/]*?\\.({"|".join(formats)})$'
+ep_pat   = re.compile(ep_pat, re.I)
+ccache   = {'remote':{}, 'local':{}}
 
 readline.parse_and_bind("tab: complete")
 readline.set_completer_delims(' ')
+
+def basename(path):
+  if len(path) < 2:
+    return path
+  if path.endswith('/') or path.endswith(os.path.sep):
+    path = path[:-1]
+  return os.path.basename(path)
+
 
 def list_completion(values, text, state=-1):
   values = [f for f in values if f.startswith(text)]
   return values[state]
 
-def file_completion(sftp, text, state=-1):
-  dir = os.path.dirname(text) or '.'
-  if sftp:
-    files = [dir+'/'+f if dir!='.' else f for f in sftp.listdir(dir)]
-    files = [f+'/' for f in files if sftp.isdir(f)]
-  else:
-    files = [os.path.join(dir, f) if dir!='.' else f for f in os.listdir(dir)]
-    files = [f+os.path.sep for f in files if os.path.isdir(f)]
-  files=[f for f in files if f.startswith(text)]
+def file_completion(sftp, emby, text, state):
+  global ccache
+  dir  = os.path.dirname(text) or '.'
+  typ  = 'remote' if sftp else 'local'
+  fs   = sftp or os.path
+  sep  = '/' if sftp else os.path.sep
+  files = []
 
-  return files if state == -1 else files[state]
+  def join(a, b):
+    if sftp:
+      return a+'/'+b
+    return os.path.join(a,b)
 
-local_completion = lambda text, state: file_completion(None, text, state)
+  def lsdir(d):
+    return (sftp or os).listdir(dir)
+
+  def isdir(d):
+    return (sftp or os.path).isdir(d)
+
+  if emby:
+    files = ccache.get('emby', [])
+    if not files:
+      files = [basename(x.path)+'/' for x in emby.series_sync]
+      ccache['emby'] = files
+
+  if not files:
+    files = ccache[typ].get(dir, [])
+  if not files:
+    files = [join(dir, f) if dir!='.' else f for f in lsdir(dir)]
+    files = [f+sep for f in files if isdir(f)]
+    ccache[typ][dir] = files
+
+  files = [f for f in files if f.startswith(text)]
+
+  return files[state]
+
+local_completion = lambda text, state: file_completion(None, None, text, state)
 
 def emby_connect(config):
   embycfg = config.find('.//emby')
@@ -130,6 +139,19 @@ def edit_config(config=None):
     pkeyfile.text = pkeyfile.text and os.path.realpath(pkeyfile.text)
     readline.set_completer(None)
 
+  emby = auth.find('./emby')
+  if emby is None:
+    emby = etree.SubElement(auth, 'emby')
+    url = input('\nPlease enter emby url [opt]: ')
+    if url:
+      if not url.startswith('http'):
+        url = 'http://' + url
+      emby.set('url', url)
+      emby.set('username', input('Please enter emby username:  '))
+      emby.set('password', input('Please enter emby password:  '))
+
+  emby = emby_connect(auth)
+
   readline.set_completer(local_completion)
   dirname = os.path.realpath(input('\nPlease enter local [save] dir: '))
   readline.set_completer(None)
@@ -140,10 +162,16 @@ def edit_config(config=None):
     loc.set('location', dirname)
 
   with get_connection(config) as sftp:
-    comp = lambda text, state: file_completion(sftp, text, state)
+    comp = lambda text, state: file_completion(sftp, emby, text, state)
     readline.set_completer(comp)
     rpath = input('Please enter remote show dir [empty to end]: ')
     readline.set_completer(None)
+
+    if emby:
+      for series in emby.series_sync:
+        if basename(series.path) == rpath.rstrip('/\\'):
+          rpath = series.path
+          break
 
     while rpath:
       rpath = sftp.normalize(rpath)
