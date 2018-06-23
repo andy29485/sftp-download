@@ -101,8 +101,13 @@ def emby_connect(config):
 def get_emby_obj(path, conn=None):
   if conn is None:
     return None
+  for obj in conn.series_sync:
+    op = obj.path
+    if op+'/' in path:
+      return obj
   for obj in conn.series_sync + conn.movies_sync:
-    if obj.path in path or path.lower() in obj.path.lower():
+    op = obj.path
+    if op in path or path.lower() in op.lower():
       return obj
   return None
 
