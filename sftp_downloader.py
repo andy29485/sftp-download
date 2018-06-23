@@ -8,6 +8,7 @@
 import pysftp
 import bisect
 import shutil
+import logging
 import os
 import sys
 import re
@@ -34,6 +35,10 @@ formats  = ('mkv','mp4','avi','wmv','flv','mov')
 ep_pat   = f'(?<=/)?[^/]*?(\\d+)x(\\d+)[^/]*?\\.({"|".join(formats)})$'
 ep_pat   = re.compile(ep_pat, re.I)
 ccache   = {'remote':{}, 'local':{}}
+logger   = logging.Logger('sftp_downloader')
+
+logger.setLevel(logging.ERROR)
+logger.addHandler(logging.StreamHandler(sys.stdout))
 
 readline.parse_and_bind("tab: complete")
 readline.set_completer_delims(' ')
@@ -103,7 +108,7 @@ def get_emby_obj(path, conn=None):
     return None
   for obj in conn.series_sync:
     op = obj.path
-    if op+'/' in path:
+    if op.rstrip('\\/')+'/' in path.rstrip('\\/')+'/':
       return obj
   for obj in conn.series_sync + conn.movies_sync:
     op = obj.path
@@ -112,13 +117,30 @@ def get_emby_obj(path, conn=None):
   return None
 
 def update_emby_info(conn, showpath, ranges):
+  logger.debug('updating emby watch status for \"%s\", with %s',
+    showpath, str(ranges),
+  )
   if conn is None:
+    logger.info('  Not connected to emby, skipping update')
     return
   item = get_emby_obj(showpath, conn)
+  if item:
+    logger.debug('  found item %s (%s)', item.name, item.id)
+  else:
+    logger.debug('  could not find item')
+    return
   try:
     for season in item.seasons_sync:
       eps = ranges.get(season.index_number, set())
       for ep in season.episodes_sync:
+        logger.debug('  %02dx%02d - %s',
+          ep.season_number, ep.index_number,
+          'already watched' if ep.watched else (
+            'not downloaded (somehow?)'
+               if ep.index_number not in eps else
+            'setting'
+          )
+        )
         if ep.index_number in eps and not ep.watched:
           ep.setWatched_sync()
   except:
@@ -306,6 +328,7 @@ def process_config(config):
 #   per server
 def process_connection(config):
   conn = emby_connect(config)
+  update_emby_info(conn, "/mnt/media/TV/Steins_Gate_0", {1: {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}})
   with get_connection(config) as sftp:
     total = 0
     todo  = {}
@@ -322,9 +345,11 @@ def process_connection(config):
               'paths':paths,
           }
     download_dict(todo, total, conn, sftp)
+  save(config)
 
 #   do all the downloading
 def download_dict(todo, total, conn, sftp):
+  logger.debug('\n\nDownload dict. Total: %d', total)
   index = 0
   for save_location in todo:
     for config in todo[save_location]:
@@ -337,6 +362,9 @@ def download_dict(todo, total, conn, sftp):
         if config is not None:
           update_range(config, ranges)
         update_emby_info(conn, show['showpath'], ranges)
+      if not paths:
+        update_emby_info(conn, show['showpath'], ranges)
+      save(config)
 
 #   get show dir
 def process_show_config(config, save_location, sftp, ir=False):
@@ -355,6 +383,8 @@ def process_show(config, showpath, save_location, sftp, ranges={}, ir=False):
   def pfile(path):
     if chk(path):
       paths.append(path)
+
+  logger.debug('\n%s\n%s', showpath, str(ranges))
   sftp.walktree(showpath, pfile, igr, igr)
 
   return paths, ranges
@@ -420,6 +450,7 @@ def get_file(config, save_location, path, sftp, conn, index=0, total=0):
 
 def download_file_check(ranges, save_location, sftp, path, ir=False):
   if path.rpartition('.')[2].lower() not in formats:
+    logger.debug('  (skip) Bad format for: \"%s\"', path)
     return False
 
   info = ep_pat.search(path)
@@ -433,8 +464,16 @@ def download_file_check(ranges, save_location, sftp, path, ir=False):
   remote_size = sftp.lstat(path).st_size
   if local_size == remote_size:
     # file already fully downloaded, skip
+    logger.info('  (skip) File downloaded at: \"%s\"', lpath)
+    ranges[season] = ranges.get(season, set()).union({episode})
     return False
 
+  logger.info('  %s   -   not info: %5s,     ir: %5s,     not in range: %5s',
+          f'{season:02}x{episode:02}' if info else '--x--',
+          'False' if info else 'True',
+          str(ir),
+          str(episode not in ranges.get(season, set())),
+  )
   if not info or ir or episode not in ranges.get(season, set()):
     if info:
       # update ep range
