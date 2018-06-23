@@ -308,7 +308,7 @@ def process_connection(config):
       save_location = group.get('location', './')
       todo[save_location] = {}
       for show in group.findall('./show'):
-        path,paths,rngs = process_show_config(show, save_location, sftp, conn)
+        path,paths,rngs = process_show_config(show, save_location, sftp)
         if len(paths):
           total += len(paths)
           todo[save_location][show] = {
@@ -325,19 +325,19 @@ def download_dict(todo, total, conn, sftp):
     for config in todo[save_location]:
       show   = todo[save_location][config]
       ranges = show['ranges']
-      paths  = show['paths'])
+      paths  = show['paths']
       for path in paths:
         index += 1
         download_file(save_location, sftp, path, index, total or len(paths))
-        if config:
+        if config is not None:
           update_range(config, ranges)
         update_emby_info(conn, show['showpath'], ranges)
 
 #   get show dir
-def process_show_config(config, save_location, sftp, conn=None, ir=False):
+def process_show_config(config, save_location, sftp, ir=False):
   ranges   = xml_range_to_dict(config)
   showpath = config.findtext('.//remotepath')
-  p,r = process_show(config, showpath, save_location, sftp, conn, ranges, ir)
+  p,r = process_show(config, showpath, save_location, sftp, ranges, ir)
   return showpath, p, r
 
 #   search eps in the show
@@ -384,12 +384,12 @@ def get_dir(config, save_location, path, sftp, conn):
   search = './/group/show/remotepath[contains(text(),"{path}")' + \
            ' or contains("{path}",text())]/..'
   showcfg = config.xpath(search)
-  if showcfg
+  if showcfg is not None:
     show_path = showcfg.findtext('./remotepath')
     save_location = showcfg.getparent().get('location')
-    _,p,r = process_show_config(showcfg, save_location, sftp, conn, ir=True)
+    _,p,r = process_show_config(showcfg, save_location, sftp, ir=True)
   else:
-    p,r = process_show(None, path, save_location, sftp, conn)
+    p,r = process_show(None, path, save_location, sftp)
   download_dict({
     save_location: {
       showcfg: {
@@ -398,7 +398,7 @@ def get_dir(config, save_location, path, sftp, conn):
         'paths':p,
       }
     }
-  })
+  }, 0, conn, sftp)
 
 def get_file(config, save_location, path, sftp, conn, index=0, total=0):
   if not sftp.exists(path):
