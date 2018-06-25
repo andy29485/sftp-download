@@ -30,8 +30,7 @@ python -m pip install -U -r requirements.txt
 mkdir -p ~/.bash_completion.d/
 printf "for bc in ~/.bash_completion.d/*;do\n  . \"$bc\"\ndone\n" > ~/.bash_completion
 ```
-- copy the `sftp_downloader_py` to your `~/.bash_completion.d/` dir
+- copy the `sftp_downloader_py` file to your `~/.bash_completion.d/` dir
 - add the current dir to your path variable:
   - append the following to your `~/.bashrc` file:
-    ```PATH="$PATH:<PATH TO sftp_ed_downloader DIR>"```
-
+    ```PATH="$PATH:<PATH TO sftp-downloader.py DIR>"```

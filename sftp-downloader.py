@@ -152,7 +152,7 @@ def update_emby_info(conn, showpath, ranges):
 def emby_search(conn, search):
   if not conn:
     return None
-  for series in emby.series_sync:
+  for series in conn.series_sync:
     if basename(series.path) == search.rstrip('/\\'):
       return series.path
   return None
@@ -407,7 +407,7 @@ def process_item(config, item_name):
       return get_file(config, sloc, item_name, sftp, conn)
 
 def get_search(config, save_location, path, sftp, conn):
-  path = emby_search(conn, rpath)
+  path = emby_search(conn, path)
   search = f'.//group/show/remotepath[text()="{path}"]/../../@location'
   save_location = (config.xpath(search) or [save_location])[0]
   if sftp.isdir(path):

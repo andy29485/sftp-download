@@ -3,9 +3,9 @@ _sftp_downloader_py () {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    words="`sftp_downloader.py ls "$cur"`"
+    words="`sftp-downloader.py ls "$cur"`"
 
     COMPREPLY=( $(compgen -W "${words}" -- ${cur}) )
     return 0
 }
-complete -F _sftp_downloader_py sftp_downloader.py
+complete -F _sftp_downloader_py sftp-downloader.py
