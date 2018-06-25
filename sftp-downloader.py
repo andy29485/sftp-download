@@ -59,7 +59,6 @@ def file_completion(sftp, emby, text, state):
   global ccache
   dir  = os.path.dirname(text) or '.'
   typ  = 'remote' if sftp else 'local'
-  fs   = sftp or os.path
   sep  = '/' if sftp else os.path.sep
   files = []
 
@@ -82,6 +81,8 @@ def file_completion(sftp, emby, text, state):
 
   if not files:
     files = ccache[typ].get(dir, [])
+
+
   if not files:
     files = [join(dir, f) if dir!='.' else f for f in lsdir(dir)]
     files = [f+sep for f in files if isdir(f)]
@@ -89,7 +90,7 @@ def file_completion(sftp, emby, text, state):
 
   files = [f for f in files if f.startswith(text)]
 
-  return files[state]
+  return files if state == -1 else files[state]
 
 local_completion = lambda text, state: file_completion(None, None, text, state)
 
@@ -537,7 +538,10 @@ if __name__ == '__main__':
       config = edit_config(config)
     elif arg.lower() in ('l', 'ls', 'lst', 'list'):
       with get_connection(config) as sftp:
-        print('\n'.join(file_completion(sftp, ' '.join(sys.argv[i+1:]), -1)))
+        conn = emby_connect(config)
+        print('\n'.join(
+              file_completion(sftp, conn, ' '.join(sys.argv[i+1:]), -1)
+        ))
       break
     else:
       process_item(config, arg)
