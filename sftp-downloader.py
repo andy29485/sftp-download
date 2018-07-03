@@ -154,9 +154,11 @@ def update_emby_info(conn, showpath, ranges):
         )
         if ep.index_number in eps and not ep.watched:
           ep.setWatched_sync()
+          ep.update_sync()
   except:
     try:
       item.setWatched_sync()
+      item.update_sync()
     except:
       return
 
