@@ -147,9 +147,9 @@ def update_emby_info(conn, showpath, ranges):
         logger.debug('  %02dx%02d - %s',
           ep.season_number, ep.index_number,
           'already watched' if ep.watched else (
-            'not downloaded (somehow?)'
+            'will download'
                if ep.index_number not in eps else
-            'setting'
+            'downloaded, setting watched'
           )
         )
         if ep.index_number in eps and not ep.watched:
