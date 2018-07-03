@@ -57,10 +57,20 @@ def list_completion(values, text, state=-1):
 
 def file_completion(sftp, emby, text, state):
   global ccache
-  dir  = os.path.dirname(text) or '.'
-  typ  = 'remote' if sftp else 'local'
-  sep  = '/' if sftp else os.path.sep
+  old = ''
+  if not sftp:
+    old  = text
+    text = os.path.expanduser(text)
+
+  dir = os.path.dirname(text) or '.'
+  typ = 'remote' if sftp else 'local'
+  sep = '/' if sftp else os.path.sep
   files = []
+
+  if sftp:
+    norm = sftp.normalize(dir)
+  else:
+    norm = os.path.abspath(dir)
 
   def join(a, b):
     if sftp:
@@ -151,11 +161,15 @@ def update_emby_info(conn, showpath, ranges):
       return
 
 def emby_search(conn, search):
+  logger.debug('emby-search (path):')
   if not conn:
+    logger.debug('  No conn, return None')
     return None
   for series in conn.series_sync:
     if basename(series.path) == search.rstrip('/\\'):
+      logger.debug('  Found series: %s', series.name)
       return series.path
+  logger.debug('  Nothing matches')
   return None
 
 # connect to sfpt
@@ -230,10 +244,8 @@ def edit_config(config=None):
     rpath = input('Please enter remote show dir [empty to end]: ')
     readline.set_completer(None)
 
-    rpath = emby_search(emby, rpath) or rpath
-
     while rpath:
-      rpath = sftp.normalize(rpath)
+      rpath = sftp.normalize(emby_search(emby, rpath) or rpath)
       show = loc.xpath(f'./show/remotepath[text()="{rpath}"]/..')
       if not show:
         show = etree.SubElement(loc,  'show')
@@ -420,16 +432,22 @@ def get_dir(config, save_location, path, sftp, conn):
   search = './/group/show/remotepath[contains(text(),"{path}")' + \
            ' or contains("{path}",text())]/..'
   showcfg = config.xpath(search)
-  if showcfg is not None:
-    show_path = showcfg.findtext('./remotepath')
+  if showcfg:
+    showcfg = showcfg[0]
+    path = showcfg.findtext('./remotepath')
     save_location = showcfg.getparent().get('location')
     _,p,r = process_show_config(showcfg, save_location, sftp, ir=True)
   else:
+    if conn:
+      for show in conn.series_sync:
+        if basename(show.path) in (path, path.strip('/\\')):
+          path = show.path
+          break
     p,r = process_show(None, path, save_location, sftp)
   download_dict({
     save_location: {
-      showcfg: {
-        'showpath':show_path,
+      (showcfg or None): {
+        'showpath':path,
         'ranges':r,
         'paths':p,
       }
