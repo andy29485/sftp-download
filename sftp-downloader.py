@@ -95,7 +95,7 @@ def file_completion(sftp, emby, text, state):
 
   if not files:
     files = [join(dir, f) if dir!='.' else f for f in lsdir(dir)]
-    files = [f+sep for f in files if isdir(f)]
+    files = [f+sep if isdir(f) else f for f in files]
     ccache[typ][dir] = files
 
   files = [f for f in files if f.startswith(text)]
