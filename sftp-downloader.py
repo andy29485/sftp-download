@@ -339,6 +339,7 @@ def update_range(config, ranges):
 def process_config(config):
   for connection in config.findall('./connection'):
     process_connection(connection)
+    save(config)
 
 #   per server
 def process_connection(config):
@@ -360,7 +361,6 @@ def process_connection(config):
               'paths':paths,
           }
     download_dict(todo, total, conn, sftp)
-  save(config)
 
 #   do all the downloading
 def download_dict(todo, total, conn, sftp):
@@ -379,7 +379,6 @@ def download_dict(todo, total, conn, sftp):
         update_emby_info(conn, show['showpath'], ranges)
       if not paths:
         update_emby_info(conn, show['showpath'], ranges)
-      save(config)
 
 #   get show dir
 def process_show_config(config, save_location, sftp, ir=False):
@@ -455,6 +454,7 @@ def get_dir(config, save_location, path, sftp, conn):
       }
     }
   }, 0, conn, sftp)
+  save(config)
 
 def get_file(config, save_location, path, sftp, conn, index=0, total=0):
   if not sftp.exists(path):
