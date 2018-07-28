@@ -9,6 +9,7 @@ import pysftp
 import bisect
 import shutil
 import logging
+import time
 import os
 import sys
 import re
@@ -513,13 +514,39 @@ def download_file(save_location, sftp, path, index=0, total=0):
     ilen = len(str(total))
     name = f'({index:0{ilen}}/{total}) {name}'
 
+  last_times = 0
+  last_trans = 0
+  num_calls  = 1
+  last_tran  = 0
+  last_time  = start_time = time.time()
   def callback(cur, tot):
-    width = shutil.get_terminal_size((80, 20)).columns - 17 # max width
+    width = shutil.get_terminal_size((80, 20)).columns - 23 # max width
     nlen  = width//2                         # lenght for name information
     plen  = nlen + (1 if width%2 else 0) - 2 # length for progress bar
     dname = name                             # display name
     blen  = plen*cur//tot                    # progress bar lenght
     pcomp = 100*cur/tot                      # percent completion
+
+    nonlocal last_times
+    nonlocal last_trans
+    nonlocal num_calls
+    nonlocal last_tran
+    nonlocal last_time
+
+    cur_time = time.time()
+    last_times = (last_times*(num_calls-1) + cur_time - last_time)/num_calls
+    last_trans = (last_trans*(num_calls-1) + cur      - last_tran)/num_calls
+
+    num_calls += 1
+    last_time  = cur_time # remember current info
+    last_tran  = cur      # remember current info
+
+    if cur == tot:
+      tl = int(cur_time - start_time)
+    else:
+      speed = last_trans/last_times # bytes/s
+      tl    = int((tot-cur)/speed)     # time left (s)
+    tl = f'{((tl//3600)%60):02}:{((tl//60)%60):02}:{(tl%60):02}' # size 8
 
     # cut name if needed
     if len(dname) > nlen:
@@ -533,7 +560,7 @@ def download_file(save_location, sftp, path, index=0, total=0):
     else:
       bar = f'{"="*blen}{" "*(plen-blen)}'
 
-    out = f'\r{dname:{nlen}} [{bar}] ({pcomp:05.2f} %)    '
+    out = f'\r{dname:{nlen}} [{bar}] ({pcomp:05.2f}% - {tl}) '
 
     if cur == tot:
       print(out)
