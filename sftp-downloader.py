@@ -560,7 +560,7 @@ def download_file(save_location, sftp, path, index=0, total=0):
     else:
       bar = f'{"="*blen}{" "*(plen-blen)}'
 
-    out = f'\r{dname:{nlen}} [{bar}] ({pcomp:05.2f}% - {tl})  '
+    out = f'\r{dname:{nlen}} [{bar}] ({pcomp:6.2f}% - {tl})  '
 
     if cur == tot:
       print(out)
