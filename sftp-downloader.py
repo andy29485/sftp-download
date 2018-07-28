@@ -520,7 +520,7 @@ def download_file(save_location, sftp, path, index=0, total=0):
   last_tran  = 0
   last_time  = start_time = time.time()
   def callback(cur, tot):
-    width = shutil.get_terminal_size((80, 20)).columns - 23 # max width
+    width = shutil.get_terminal_size((80, 20)).columns - 25 # max width
     nlen  = width//2                         # lenght for name information
     plen  = nlen + (1 if width%2 else 0) - 2 # length for progress bar
     dname = name                             # display name
@@ -560,12 +560,12 @@ def download_file(save_location, sftp, path, index=0, total=0):
     else:
       bar = f'{"="*blen}{" "*(plen-blen)}'
 
-    out = f'\r{dname:{nlen}} [{bar}] ({pcomp:05.2f}% - {tl}) '
+    out = f'\r{dname:{nlen}} [{bar}] ({pcomp:05.2f}% - {tl})  '
 
     if cur == tot:
       print(out)
     else:
-      print(out, end='\r', flush=True)
+      print(out[:-2], end='\r', flush=True)
 
   if local_size == remote_size:
     # file already fully downloaded, skip
