@@ -478,6 +478,9 @@ def download_file_check(ranges, save_location, sftp, path, ir=False):
   info = ep_pat.search(path)
   if info:
     season, episode = int(info.group(1)), int(info.group(2))
+  else:
+    logger.warn('could not parse ep info of "%s"', path)
+    return False
 
   name  = os.path.basename(path)
   lpath = os.path.join(save_location, name)
