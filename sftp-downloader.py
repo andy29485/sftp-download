@@ -479,7 +479,7 @@ def download_file_check(ranges, save_location, sftp, path, ir=False):
   if info:
     season, episode = int(info.group(1)), int(info.group(2))
   else:
-    logger.warn('could not parse ep info of "%s"', path)
+    logger.error('could not parse ep info of "%s"', path)
     return False
 
   name  = os.path.basename(path)
@@ -574,6 +574,9 @@ def download_file(save_location, sftp, path, index=0, total=0):
     # file already fully downloaded, skip
     callable(-1, -1)
     return
+
+  if not os.path.exists(save_location):
+    os.path.makedirs(save_location)
 
   sftp.get(path,
     localpath=lpath,
