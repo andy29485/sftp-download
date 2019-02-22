@@ -251,7 +251,16 @@ def edit_config(config=None):
     readline.set_completer(None)
 
     while rpath:
-      rpath = sftp.normalize(emby_search(emby, rpath) or rpath)
+      while True:
+        try:
+          rpath = sftp.normalize(emby_search(emby, rpath) or rpath)
+          break
+        except:
+          print('show not found, try a different path / show')
+          rpath = input('Alternate path [empty to end]: ').strip()
+          if not rpath:
+            break
+
       show = loc.xpath(f'./show/remotepath[text()="{rpath}"]/..')
       if not show:
         show = etree.SubElement(loc,  'show')
