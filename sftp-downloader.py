@@ -108,8 +108,11 @@ local_completion = lambda text, state: file_completion(None, None, text, state)
 # emby helper functions
 def emby_connect(config):
   embycfg = config.find('.//emby')
-  if embypy and embycfg is not None:
-    conn = embypy.Emby(**embycfg.attrib)
+  if embypy and embycfg is not None and embycfg.get('url', '').trim():
+    try:
+      conn = embypy.Emby(**embycfg.attrib)
+    except:
+      return None
     embycfg.set('token',  conn.connector.token or conn.connector.api_key)
     embycfg.set('userid', conn.connector.userid)
     return conn
@@ -222,7 +225,7 @@ def edit_config(config=None):
   emby = auth.find('./emby')
   if emby is None:
     emby = etree.SubElement(auth, 'emby')
-    url = input('\nPlease enter emby url [opt]: ')
+    url = input('\nPlease enter emby url [opt]: ').trim()
     if url:
       if not url.startswith('http'):
         url = 'http://' + url
